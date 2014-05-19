@@ -22,12 +22,12 @@ Uses ---- for Kinect.
 This package is divided conceptually in:
 
 * dmp_training: 
-  * Learn from end effectors (Razer Hydra, Kinect... 3D/6D poses).
+  * Learn from end effectors (Razer Hydra, Kinect... 6D poses).
   * Learn from joints (joint states of a robot).
   * Management interface for gestures (save learnt gestures, visualize them)
 
 * dmp_generation:
-  * Generate from end effectors pose (generate from 3D/6D pose to another 3D/6D pose motions).
+  * Generate from end effectors pose (generate from 6D pose to another 6D pose motions).
   * Generate from joint state (generate from one joint state (current, probably) to another joint state).
 * dmp_execution:
   * Trajectory executor (via MoveIt!).
