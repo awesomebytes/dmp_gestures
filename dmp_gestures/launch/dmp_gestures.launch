@@ -1,0 +1,4 @@
+<launch>
+    <node pkg="dmp_gestures" type="dmp_gestures.py" name="dmp_gestures_node">
+    </node>   
+</launch>
