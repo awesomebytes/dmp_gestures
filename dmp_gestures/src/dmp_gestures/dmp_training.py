@@ -59,6 +59,12 @@ class LearnFromEndEffector():
         if self.start:
             rospy.loginfo("Saving stuff")
 
+    def start_learn(self):
+        self.start = True
+
+    def stop_learn(self):
+        self.start = False
+
 
 class LearnFromJointState():
     """Manage the learning from joint positions"""
@@ -81,14 +87,14 @@ if __name__ == '__main__':
     TEST_GROUP_1 = "right_arm_torso"
     TEST_GROUP_2 = "left_arm"
 
-    # Test if we succesfully create an instance of the class with one topic
+    # Test if we successfully create an instance of the class with one topic
     eef_learn = LearnFromEndEffector([TEST_TOPIC_1], [TEST_GROUP_1])
     rospy.sleep(0.5)  # Give a moment to catch up
     pub1 = rospy.Publisher(TEST_TOPIC_1, PoseStamped)
     pub1.publish(PoseStamped())
     pub1.publish(PoseStamped())
 
-    # Test if we succesfully create an instance of the class with two topics
+    # Test if we successfully create an instance of the class with two topics
     pub2 = rospy.Publisher(TEST_TOPIC_2, PoseStamped)
     eef_learn_2_topics = LearnFromEndEffector([TEST_TOPIC_1, TEST_TOPIC_2], [TEST_GROUP_1, TEST_GROUP_2])
     rospy.sleep(0.5)  # Give a moment to catch up
