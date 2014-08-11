@@ -160,6 +160,11 @@ class gestureGeneration():
         
         rospy.loginfo("Response of makeLDFRequest is:\n" + str(self.resp_from_makeLFDRequest) )
         
+        rospy.loginfo("Joints:" + str(joints))
+        rospy.loginfo("Initial pose:" + str(self.gesture_x0))
+        rospy.loginfo("Final pose: " + str(self.gesture_goal))
+        rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
+        
 
     def makeLFDRequest(self, dims, traj, dt, K_gain,
                        D_gain, num_bases):
