@@ -47,3 +47,14 @@ This package is divided conceptually in:
 
 Must be done but lazy:
 * Update CMakeLists.txt and package.xml with dependences.
+
+Workroad:
+ * Implement learning from play_motion gesture.
+   * Send motion to play motion + start recording bag (with rosbag python API http://wiki.ros.org/rosbag/Code%20API#py_api). Necessary info will be needed to be taken from param server (i.e.: joints involved in the movement to learn only from these in /joint_states).
+   * When motion is finished stop recording and save "metadata". Initial point, final point, recorded trajectory.
+   * From here do a low pass filter on the trajectories and downsample it.
+   * Learn DMP and store values and metadata in .yaml file.
+ * Once this is done learning from live robot should be straight forward (change the sending of the play_motion gesture to move the real robot and have some start and stop buttons to record... probably setting manually the joints you wanna learn from).
+ * Then create some GUI to play, rqt_ based probably and watch on Rviz the trajectory. Setting initial and final point/configuration would be the most convenient. rqt_trajectory_xxx will probably be used for configurations. For initial and final points, interactive markers... or MoveIt! Rviz plugin-like style IK would be ideal.
+
+ 
