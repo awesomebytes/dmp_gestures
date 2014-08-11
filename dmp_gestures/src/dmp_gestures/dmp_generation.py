@@ -42,13 +42,14 @@ class gestureGeneration():
         self.left_arm_torso = self.torso + self.left_arm
         self.both_arms = self.left_arm + self.right_arm
         self.both_arms_torso = self.torso + self.both_arms
+        self.gesture_difference = []
         
-    def getNamesAndMsgList(self, group='right_arm_torso'):
+    def getNamesAndMsgList(self, joints, joint_state_msg):
         """ Get the joints for the specified group and return this name list and a list of it's values in joint_states
         Note: the names and values are correlated in position """
 
-        list_to_iterate = getattr(self, group)
-        curr_j_s = self.current_joint_states
+        list_to_iterate = joints
+        curr_j_s = joint_state_msg
         ids_list = []
         msg_list = []
         rospy.logdebug("Current message: " + str(curr_j_s))
@@ -136,27 +137,28 @@ class gestureGeneration():
             # Get the joint and it's values...
             js = msg # JointState()
             # Process interesting joints here
-            
+            names, positions = self.getNamesAndMsgList(joints, msg)
             # Append interesting joints here
-            traj.append([p.pose.position.x, p.pose.position.y, p.pose.position.z, roll, pitch, yaw])
+            traj.append(positions)
             if first_point:
                 # Store first point
-                self.gesture_x0 = [p.pose.position.x, p.pose.position.y, p.pose.position.z, roll, pitch, yaw]
+                self.gesture_x0 = positions
                 first_point = False
         bag.close()
         # Store last point
-        self.gesture_goal = [p.pose.position.x, p.pose.position.y, p.pose.position.z, roll, pitch, yaw]
+        self.gesture_goal = positions
         
         # Calculate the difference between initial and final point
         for val1, val2 in zip(self.gesture_x0, self.gesture_goal):                     
             self.gesture_difference.append(val2-val1)
         
-        print str(len(traj)) + " points in example traj."
+        print str(len(traj)) + " points in example traj. Using " + str(num_bases) + " num_bases"
         resp = self.makeLFDRequest(dims, traj, dt, K, D, num_bases)
         #Set it as the active DMP
         self.makeSetActiveRequest(resp.dmp_list)
         self.resp_from_makeLFDRequest = resp
         
+        rospy.loginfo("Response of makeLDFRequest is:\n" + str(self.resp_from_makeLFDRequest) )
         
 
     def makeLFDRequest(self, dims, traj, dt, K_gain,
@@ -218,3 +220,7 @@ class gestureGeneration():
 if __name__ == '__main__':
     rospy.init_node("test_generation_classes")
     rospy.loginfo("Initializing dmp_generation test.")
+    gg = gestureGeneration()
+    gg.loadGestureFromBagJointStates("uninitialized_rosbag_name.bag", ['arm_right_1_joint', 'arm_right_2_joint', 'arm_right_3_joint',
+                           'arm_right_4_joint', 'arm_right_5_joint', 'arm_right_6_joint',
+                           'arm_right_7_joint'])
