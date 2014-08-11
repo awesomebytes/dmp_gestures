@@ -104,9 +104,7 @@ class RecordFromPlayMotion():
         self.play_motion_as = SimpleActionClient(PLAY_MOTION_AS, PlayMotionAction)
         self.play_motion_as.wait_for_server()
         rospy.loginfo("Connected.")
-        import rosbag
         self.current_rosbag_name = "uninitialized_rosbag_name"
-        #self.current_rosbag = rosbag.Bag(self.current_rosbag_name + '.bag', 'w')
         self.last_joint_states_data = None
         
     def joint_states_cb(self, data):
