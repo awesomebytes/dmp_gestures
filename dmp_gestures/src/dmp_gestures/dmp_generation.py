@@ -166,32 +166,43 @@ class gestureGeneration():
         rospy.loginfo("Joints:" + str(joints))
         rospy.loginfo("Initial pose:" + str(self.gesture_x0))
         rospy.loginfo("Final pose: " + str(self.gesture_goal))
+        time = self.info_bag['duration']
+        rospy.loginfo("Time: " + str(time))
         rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
-        self.saveGestureYAML(bagname + ".yaml", bagname, joints, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest)
+        gesture_dict = self.saveGestureYAML(bagname + ".yaml", bagname, joints, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest, time)
+        return gesture_dict
 
-    def saveGestureYAML(self, yamlname, name, joints, initial_pose, final_pose, computed_dmp):
+    def saveGestureYAML(self, yamlname, name, joints, initial_pose, final_pose, computed_dmp, time):
         """Given the info of the gesture computed with the DMP server save it into a yaml file.
         @yamlname string name of the yaml file
         @name string name of the gesture
         @joints list of strings joints that are included in this gesture
         @initial_pose list of double initial pose for the gesture as it was recorded in the training
         @final_pose list of double final pose of the gesture as it was recorded in the training
-        @computed_dmp python/object/new:dmp.srv._LearnDMPFromDemo.LearnDMPFromDemoResponse with the response of the DMP server"""
+        @computed_dmp python/object/new:dmp.srv._LearnDMPFromDemo.LearnDMPFromDemoResponse with the response of the DMP server
+        @time double how long the gesture took"""
         gesture_dict = {"name": name,
                         "joints" : joints,
                         "initial_pose" : initial_pose,
                         "final_pose" : final_pose,
-                        "computed_dmp" : computed_dmp}
+                        "computed_dmp" : computed_dmp,
+                        "duration" : time}
         rospy.loginfo("gesture_dict:\n" + str(gesture_dict))
         stream = file(yamlname, "w")
         yaml.dump(gesture_dict, stream)
+        self.resp_from_makeLFDRequest = gesture_dict["computed_dmp"]
+        return gesture_dict
 
     def loadGestureYAML(self, yamlname):
         """Given a yamlname which has a gesture saved load it and set it as active in the DMP server"""
-        stream = file(yamlname, "r")
+        try:
+            stream = file(yamlname, "r")
+        except:
+            return None
         gesture_dict = yaml.load(stream)
         #Set it as the active DMP
         self.makeSetActiveRequest(gesture_dict.dmp_list)
+        return gesture_dict
 
     def makeLFDRequest(self, dims, traj, dt, K_gain,
                        D_gain, num_bases):
@@ -244,7 +255,7 @@ class gestureGeneration():
         return resp
 
 
-    def getPlan(self, initial_pose, goal_pose, initial_velocities=[], t_0 = None, goal_thresh=[]):
+    def getPlan(self, initial_pose, goal_pose, seg_length=-1, initial_velocities=[], t_0 = None, goal_thresh=[]):
         """Generate a plan...
         @initial_pose list of double initial pose for the gesture
         @goal_pose list of double final pose of the gesture
@@ -264,9 +275,10 @@ class gestureGeneration():
         
         #goal = [0.259,-0.252,1.289, 0.0212535586323, -0.00664429330438, 0.117483470173]
         goal_thresh = [0.1,0.1,0.1, 0.1, 0.1, 0.1]
-        seg_length = -1          #Plan until convergence to goal
+        seg_length = seg_length          #Plan until convergence to goal is -1
         tau = 2 * self.resp_from_makeLFDRequest.tau       #Desired plan should take twice as long as demo
         tau = self.resp_from_makeLFDRequest.tau -1 # HEY WE NEED TO PUT -1 SEC HERE, WHY?? BUG?
+        rospy.logwarn("tau is: " + str(tau))
         dt = 1.0
         integrate_iter = 5       #dt is rather large, so this is > 1
         plan_resp = self.makePlanRequest(x_0, x_dot_0, t_0, goal, goal_thresh,

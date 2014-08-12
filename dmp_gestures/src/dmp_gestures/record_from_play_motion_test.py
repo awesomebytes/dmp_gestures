@@ -27,6 +27,6 @@ if __name__ == '__main__':
     rospy.init_node("test_recordfromplaymotion_class")
     rospy.loginfo("Initializing test.")
     rfpm = RecordFromPlayMotion()
-    rfpm.play_and_record("arms_t", bag_name = "test_arms_t_bag_recording")
-    rospy.loginfo("Test done, there should be a bag named: test_arms_t_bag_recording.bag")
+    rfpm.play_and_record("arms_t", bag_name = "arms_t")
+    rospy.loginfo("Test done, there should be a bag named: handshake.bag")
     
