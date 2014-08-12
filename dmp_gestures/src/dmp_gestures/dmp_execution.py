@@ -9,6 +9,16 @@ This file contains execution related classes.
 """
 
 import rospy
+from dmp.srv import GetDMPPlan, GetDMPPlanRequest,LearnDMPFromDemo, LearnDMPFromDemoRequest, SetActiveDMP, SetActiveDMPRequest
+
+
+class gestureExecution():
+    
+    def __init__(self):
+        rospy.loginfo("Initializing gestureExecution")
+
+
+
 
 if __name__ == '__main__':
     rospy.init_node("test_execution_classes")

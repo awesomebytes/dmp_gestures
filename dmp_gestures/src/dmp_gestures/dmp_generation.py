@@ -17,8 +17,11 @@ from tf.transformations import euler_from_quaternion
 from dmp.srv import GetDMPPlan, GetDMPPlanRequest,LearnDMPFromDemo, LearnDMPFromDemoRequest, SetActiveDMP, SetActiveDMPRequest
 from dmp.msg import DMPTraj, DMPData, DMPPoint
 from sensor_msgs.msg import JointState
+from moveit_msgs.srv import GetPositionFK, GetPositionFKRequest, GetPositionFKResponse, GetPositionIK, GetPositionIKRequest, GetPositionIKResponse
 
 DEFAULT_JOINT_STATES = "/joint_states"
+DEFAULT_FK_SERVICE = "/compute_fk"
+DEFAULT_IK_SERVICE = "/compute_ik"
 
 class gestureGeneration():
     
@@ -148,7 +151,7 @@ class gestureGeneration():
         # Store last point
         self.gesture_goal = positions
         
-        # Calculate the difference between initial and final point
+        # Compute the difference between initial and final point
         for val1, val2 in zip(self.gesture_x0, self.gesture_goal):                     
             self.gesture_difference.append(val2-val1)
         
@@ -164,7 +167,31 @@ class gestureGeneration():
         rospy.loginfo("Initial pose:" + str(self.gesture_x0))
         rospy.loginfo("Final pose: " + str(self.gesture_goal))
         rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
-        
+        self.saveGestureYAML(bagname + ".yaml", bagname, joints, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest)
+
+    def saveGestureYAML(self, yamlname, name, joints, initial_pose, final_pose, computed_dmp):
+        """Given the info of the gesture computed with the DMP server save it into a yaml file.
+        @yamlname string name of the yaml file
+        @name string name of the gesture
+        @joints list of strings joints that are included in this gesture
+        @initial_pose list of double initial pose for the gesture as it was recorded in the training
+        @final_pose list of double final pose of the gesture as it was recorded in the training
+        @computed_dmp python/object/new:dmp.srv._LearnDMPFromDemo.LearnDMPFromDemoResponse with the response of the DMP server"""
+        gesture_dict = {"name": name,
+                        "joints" : joints,
+                        "initial_pose" : initial_pose,
+                        "final_pose" : final_pose,
+                        "computed_dmp" : computed_dmp}
+        rospy.loginfo("gesture_dict:\n" + str(gesture_dict))
+        stream = file(yamlname, "w")
+        yaml.dump(gesture_dict, stream)
+
+    def loadGestureYAML(self, yamlname):
+        """Given a yamlname which has a gesture saved load it and set it as active in the DMP server"""
+        stream = file(yamlname, "r")
+        gesture_dict = yaml.load(stream)
+        #Set it as the active DMP
+        self.makeSetActiveRequest(gesture_dict.dmp_list)
 
     def makeLFDRequest(self, dims, traj, dt, K_gain,
                        D_gain, num_bases):
@@ -217,9 +244,35 @@ class gestureGeneration():
         return resp
 
 
-# TODO: Save gesture to yaml with metadata
+    def getPlan(self, initial_pose, goal_pose, initial_velocities=[], t_0 = None, goal_thresh=[]):
+        """Generate a plan...
+        @initial_pose list of double initial pose for the gesture
+        @goal_pose list of double final pose of the gesture
+        @initial_velocities TODO list of double : initial velocities
+        @t_0 TODO double initial time
+        @goal_thresh TODO list of double : threshold for every joint
+        @seg_length TODO integer... with -1 it's plan until convergence of goal, see docs of DMP
+        @tau TODO
+        @dt TODO
+        @integrate_iter TODO"""
+        x_0 = initial_pose
+        #x_0 = [0.137,-0.264,1.211,0.0395796940422, 0.0202532964694, 0.165785921829]
+        x_dot_0 = [0.0,0.0,0.0,0.0,0.0,0.0]
+        t_0 = 0
+        
+        goal = goal_pose
+        
+        #goal = [0.259,-0.252,1.289, 0.0212535586323, -0.00664429330438, 0.117483470173]
+        goal_thresh = [0.1,0.1,0.1, 0.1, 0.1, 0.1]
+        seg_length = -1          #Plan until convergence to goal
+        tau = 2 * self.resp_from_makeLFDRequest.tau       #Desired plan should take twice as long as demo
+        tau = self.resp_from_makeLFDRequest.tau -1 # HEY WE NEED TO PUT -1 SEC HERE, WHY?? BUG?
+        dt = 1.0
+        integrate_iter = 5       #dt is rather large, so this is > 1
+        plan_resp = self.makePlanRequest(x_0, x_dot_0, t_0, goal, goal_thresh,
+                               seg_length, tau, dt, integrate_iter)
+        return plan_resp
 
-# TODO: Load gesture from yaml
 
 
 if __name__ == '__main__':
