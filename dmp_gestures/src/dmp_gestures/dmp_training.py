@@ -118,11 +118,17 @@ class RecordFromPlayMotion():
         Try to get the joints to record from the metadata of the play_motion gesture
         or, optionally, specify the joints to track"""
         # Check if motion exists in param server
-        
+        PLAYMOTIONPATH = '/play_motion/motions/'
+        if not rospy.has_param(PLAYMOTIONPATH + motion_name):
+            rospy.logerr("Motion named: " + motion_name + " does not exist in param server at " + PLAYMOTIONPATH + motion_name)
+            return
         # Get it's info
-        
+        motion_info = rospy.get_param(PLAYMOTIONPATH + motion_name)
         # check if joints was specified, if not, get the joints to actually save
-        
+        if len(joints) > 0:
+            joints_to_record = joints
+        else:
+            joints_to_record = motion_info['joints']
         # Prepare subscriber
         self.joint_states_topic = DEFAULT_JOINT_STATES
         # Creating a subscriber to joint states
@@ -144,6 +150,10 @@ class RecordFromPlayMotion():
                 self.start_recording = False
         # when motion finishes close bag
         self.current_rosbag.close()
+        motion_data = {'motion_name' : motion_name,
+                       'joints' : joints_to_record,
+                       'rosbag_name': self.current_rosbag_name + '.bag'}
+        return motion_data
 
 if __name__ == '__main__':
     rospy.init_node("test_training_classes")

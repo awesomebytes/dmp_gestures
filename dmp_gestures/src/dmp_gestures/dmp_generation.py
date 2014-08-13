@@ -13,6 +13,7 @@ import subprocess, yaml
 import math
 import numpy as np
 import rosbag
+import matplotlib.pyplot as plt
 from tf.transformations import euler_from_quaternion
 from dmp.srv import GetDMPPlan, GetDMPPlanRequest,LearnDMPFromDemo, LearnDMPFromDemoRequest, SetActiveDMP, SetActiveDMPRequest
 from dmp.msg import DMPTraj, DMPData, DMPPoint
@@ -198,10 +199,13 @@ class gestureGeneration():
         try:
             stream = file(yamlname, "r")
         except:
+            print "couldnt find file: " + yamlname
             return None
         gesture_dict = yaml.load(stream)
         #Set it as the active DMP
-        self.makeSetActiveRequest(gesture_dict.dmp_list)
+        #print gesture_dict
+        self.makeSetActiveRequest(gesture_dict['computed_dmp'].dmp_list)
+        self.resp_from_makeLFDRequest = gesture_dict['computed_dmp']
         return gesture_dict
 
     def makeLFDRequest(self, dims, traj, dt, K_gain,
@@ -218,7 +222,7 @@ class gestureGeneration():
         k_gains = [K_gain]*dims
         d_gains = [D_gain]*dims
     
-        print "Starting LfD..."
+        print "Starting ..."
         rospy.wait_for_service('learn_dmp_from_demo')
         try:
             lfd = rospy.ServiceProxy('learn_dmp_from_demo', LearnDMPFromDemo)
@@ -268,24 +272,57 @@ class gestureGeneration():
         @integrate_iter TODO"""
         x_0 = initial_pose
         #x_0 = [0.137,-0.264,1.211,0.0395796940422, 0.0202532964694, 0.165785921829]
-        x_dot_0 = [0.0,0.0,0.0,0.0,0.0,0.0]
+        x_dot_0 = [0.0] * len(initial_pose)
         t_0 = 0
         
         goal = goal_pose
         
         #goal = [0.259,-0.252,1.289, 0.0212535586323, -0.00664429330438, 0.117483470173]
-        goal_thresh = [0.1,0.1,0.1, 0.1, 0.1, 0.1]
+        if len(goal_thresh) > 0:
+            this_goal_thresh = goal_thresh
+        else:
+            this_goal_thresh = [0.01] * len(initial_pose)
         seg_length = seg_length          #Plan until convergence to goal is -1
         tau = 2 * self.resp_from_makeLFDRequest.tau       #Desired plan should take twice as long as demo
         tau = self.resp_from_makeLFDRequest.tau -1 # HEY WE NEED TO PUT -1 SEC HERE, WHY?? BUG?
         rospy.logwarn("tau is: " + str(tau))
         dt = 1.0
         integrate_iter = 5       #dt is rather large, so this is > 1
-        plan_resp = self.makePlanRequest(x_0, x_dot_0, t_0, goal, goal_thresh,
+        plan_resp = self.makePlanRequest(x_0, x_dot_0, t_0, goal, this_goal_thresh,
                                seg_length, tau, dt, integrate_iter)
         return plan_resp
 
-
+class dmpPlanTrajectoryPlotter():
+    def __init__(self):
+        print "init dmpPlanTrajectoryPlotter"
+        
+    def planToPlot(self, plan, joint_names):
+        """Given a GetDMPPlanResponse make a plot of the trajectory"""
+        fig, plots = plt.subplots(nrows=len(joint_names), ncols=1)
+        # Set labels
+        for plot, joint_name in zip(plots, joint_names):
+            plot.set_xlabel('time')
+            plot.set_ylabel('position')
+            plot.set_title(joint_name)
+        # Read the bag and store the arrays for each plot
+        trajectories = []
+        # prepare somewhere to accumulate the data
+        for joint in joint_names:
+            trajectories.append([])
+        num_points = 0
+        for point in plan.plan.points:
+            num_points += 1
+            joint_vals = point.positions
+            print joint_names
+            print joint_vals
+            counter = 0
+            for joint_val in  joint_vals:
+                trajectories[counter].append(joint_val)
+                counter += 1
+        ticks = range(0, num_points)
+        for plot, trajectory in zip(plots, trajectories):
+            plot.plot(ticks, trajectory, 'b-')
+        return plt 
 
 if __name__ == '__main__':
     rospy.init_node("test_generation_classes")

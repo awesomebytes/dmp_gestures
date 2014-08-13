@@ -31,15 +31,17 @@ if __name__ == '__main__':
     rospy.loginfo("Initializing test.")
     motion = "home"
     rfpm = RecordFromPlayMotion()
-    rfpm.play_and_record(motion, bag_name = motion)
+    motion_data = rfpm.play_and_record(motion, bag_name = motion)
     rospy.loginfo("Test done, there should be a bag named: " + motion + ".bag")
-    
+    interesting_joints = motion_data['joints']
+    rosbag_name = motion_data['rosbag_name']
     gG = gestureGeneration()
     if not gG.loadGestureYAML(motion +".yaml"):
         # If the gesture does not exist
-        gesture_dict = gG.loadGestureFromBagJointStates(motion +".bag", ['arm_right_1_joint', 'arm_right_2_joint', 'arm_right_3_joint',
-                           'arm_right_4_joint', 'arm_right_5_joint', 'arm_right_6_joint',
-                           'arm_right_7_joint']) # TODO: get from the gesture name the joints
+        gesture_dict = gG.loadGestureFromBagJointStates(rosbag_name, interesting_joints)
+#         gesture_dict = gG.loadGestureFromBagJointStates(motion +".bag", ['arm_right_1_joint', 'arm_right_2_joint', 'arm_right_3_joint',
+#                            'arm_right_4_joint', 'arm_right_5_joint', 'arm_right_6_joint',
+#                            'arm_right_7_joint']) # TODO: get from the gesture name the joints
     # Now given a gesture loaded in the DMP server, let's ask for a new plan... from the original points so it should be 
     # almost equal to the trained one
     rospy.loginfo("Got gesture:\n" + str(gesture_dict))
