@@ -259,7 +259,7 @@ class gestureGeneration():
         return resp
 
 
-    def getPlan(self, initial_pose, goal_pose, seg_length=-1, initial_velocities=[], t_0 = None, goal_thresh=[]):
+    def getPlan(self, initial_pose, goal_pose, seg_length=-1, initial_velocities=[], t_0 = None, tau=None, dt=None, integrate_iter=None,goal_thresh=[]):
         """Generate a plan...
         @initial_pose list of double initial pose for the gesture
         @goal_pose list of double final pose of the gesture
@@ -283,13 +283,25 @@ class gestureGeneration():
         else:
             this_goal_thresh = [0.01] * len(initial_pose)
         seg_length = seg_length          #Plan until convergence to goal is -1
-        tau = 2 * self.resp_from_makeLFDRequest.tau       #Desired plan should take twice as long as demo
-        tau = self.resp_from_makeLFDRequest.tau -1 # HEY WE NEED TO PUT -1 SEC HERE, WHY?? BUG?
-        rospy.logwarn("tau is: " + str(tau))
-        dt = 1.0
-        integrate_iter = 5       #dt is rather large, so this is > 1
+        #tau = 2 * self.resp_from_makeLFDRequest.tau       #Desired plan should take twice as long as demo
+        if tau != None:
+            print "input tau != None"
+            print "its: " + str(tau)
+            this_tau = tau
+        else:
+            print "input tau == None"
+            this_tau = self.resp_from_makeLFDRequest.tau -1 # HEY WE NEED TO PUT -1 SEC HERE, WHY?? BUG?
+        rospy.logwarn("tau is: " + str(this_tau))
+        if dt != None:
+            this_dt = dt
+        else:
+            this_dt = 0.05
+        if integrate_iter != None:
+            this_integrate_iter = integrate_iter
+        else:
+            this_integrate_iter = 1 #5       #dt is rather large, so this is > 1
         plan_resp = self.makePlanRequest(x_0, x_dot_0, t_0, goal, this_goal_thresh,
-                               seg_length, tau, dt, integrate_iter)
+                               seg_length, this_tau, this_dt, this_integrate_iter)
         return plan_resp
 
 class dmpPlanTrajectoryPlotter():

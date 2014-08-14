@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """
-Created on 13/08/14
+Created on 14/08/14
 
 @author: Sammy Pfeiffer
 @email: sammypfeiffer@gmail.com
@@ -57,7 +57,9 @@ if __name__ == '__main__':
 #                         "final_pose" : final_pose,
 #                         "computed_dmp" : computed_dmp}
     rospy.loginfo("gesture_dict['duration] == " + str(gesture_dict["duration"]))
-    plan = gG.getPlan(gesture_dict["initial_pose"], gesture_dict["final_pose"], tau=gesture_dict["duration"], dt=0.05) #, seg_length=int(gesture_dict["duration"]))
+    ge = gestureExecution()
+    curr_joints_pose = ge.getCurrentJointsPose(joint_names)
+    plan = gG.getPlan(curr_joints_pose, gesture_dict["final_pose"], tau=gesture_dict["duration"], dt=0.05) #, seg_length=int(gesture_dict["duration"]))
     rospy.loginfo("Got plan:\n" + str(plan))
     
     rospy.loginfo("dumping plan to yaml")
@@ -65,7 +67,7 @@ if __name__ == '__main__':
     import yaml
     yaml.dump(plan, stream)
     
-    ge = gestureExecution()
+    
     traj = ge.displayTrajFromPlan(plan, joint_names, gesture_dict["initial_pose"])
     rospy.loginfo("Traj is: ")
     rospy.loginfo(str(traj))

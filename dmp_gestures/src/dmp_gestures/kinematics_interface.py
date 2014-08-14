@@ -11,13 +11,15 @@ the use of MoveIt! kinematics services.
 
 import rospy
 from moveit_msgs.srv import GetPositionFK, GetPositionFKRequest, GetPositionFKResponse,\
-                            GetPositionIK, GetPositionIKRequest, GetPositionIKResponse
+                            GetPositionIK, GetPositionIKRequest, GetPositionIKResponse,\
+                            GetStateValidity, GetStateValidityRequest, GetStateValidityResponse
 from sensor_msgs.msg import JointState
-from moveit_msgs.msg import MoveItErrorCodes
+from moveit_msgs.msg import MoveItErrorCodes, Constraints
 from geometry_msgs.msg import PoseStamped, Pose, Point, Quaternion
 
 DEFAULT_FK_SERVICE = "/compute_fk"
 DEFAULT_IK_SERVICE = "/compute_ik"
+DEFAULT_SV_SERVICE = "/check_state_validity"
 
 class ForwardKinematics():
     """Simplified interface to ask for forward kinematics"""
@@ -78,7 +80,7 @@ class InverseKinematics():
     def closeIK(self):
         self.ik_srv.close()
         
-    def getIK(self, group_name, ik_link_name, pose, avoid_collisions=True, attempts=0, robot_state=None):
+    def getIK(self, group_name, ik_link_name, pose, avoid_collisions=True, attempts=None, robot_state=None, constraints=None):
         """Get the inverse kinematics for a group with a link a in pose in 3d world.
         @group_name string group i.e. right_arm that will perform the IK
         @ik_link_name string link that will be in the pose given to evaluate the IK
@@ -96,10 +98,16 @@ class InverseKinematics():
         if type(pose) == type(PoseStamped()):
             gpikr.ik_request.pose_stamped = pose
         else:
-            rospy.logerr("pose is not a PoseStamped, can't ask for an IK")
+            rospy.logerr("pose is not a PoseStamped, it's: " + str(type(pose)) + ", can't ask for an IK")
             return
-        gpikr.ik_request.attempts = attempts
+        if attempts != None:
+            gpikr.ik_request.attempts = attempts
+        else:
+            gpikr.ik_request.attempts = 0
+        if constraints != None:
+            gpikr.ik_request.constraints = constraints
         ik_result = self.ik_srv.call(gpikr)
+        rospy.logwarn("Sent: " + str(gpikr))
         return ik_result
         
 #     def getCurrentIK(self, fk_link_names, frame_id='base_link'):
@@ -110,6 +118,37 @@ class InverseKinematics():
 #         fk_result = self.getFK(fk_link_names, js.name, js.position, frame_id)
 #         return fk_result
     
+class StateValidity():
+    def __init__(self):
+        rospy.loginfo("Initializing stateValidity class")
+        self.sv_srv = rospy.ServiceProxy(DEFAULT_SV_SERVICE, GetStateValidity)
+        rospy.loginfo("Connecting to State Validity service")
+        self.sv_srv.wait_for_service()
+        if rospy.has_param('/play_motion/approach_planner/planning_groups'):
+            list_planning_groups = rospy.get_param('/play_motion/approach_planner/planning_groups')
+            # Get groups and joints here
+            # Or just always use both_arms_torso...
+        else:
+            rospy.logwarn("Param '/play_motion/approach_planner/planning_groups' not set. We can't guess controllers")
+        rospy.loginfo("Ready for making Validity calls")
+        
+        
+    def close_SV(self):
+        self.sv_srv.close()
+        
+    def getStateValidity(self, robot_state, group_name, constraints=None):
+        """Given a RobotState and a group name and an optional Constraints
+        return the validity of the State"""
+        gsvr = GetStateValidityRequest()
+        gsvr.robot_state = robot_state
+        gsvr.group_name = group_name
+        if constraints != None:
+            gsvr.constraints = constraints
+        result = self.sv_srv.call(gsvr)
+        #GetStateValidityResponse()
+        #rospy.logwarn("sent: " + str(gsvr))
+        return result
+        
     
 if __name__ == '__main__':
     rospy.init_node("test_kinematics_class")
@@ -152,4 +191,6 @@ if __name__ == '__main__':
     args = ["right_arm", "arm_right_7_link", ps]
     rospy.loginfo( str(ik.getIK(*args) ))
     ik.closeIK()
+    
+    
     

@@ -1,6 +1,6 @@
 #!/usr/bin/python
 """
-Created on 13/08/14
+Created on 14/08/14
 
 @author: Sammy Pfeiffer
 @email: sammypfeiffer@gmail.com
@@ -20,6 +20,7 @@ from helper_functions import moveit_error_dict, goal_status_dict
 from dmp_training import RecordFromPlayMotion
 from dmp_generation import gestureGeneration
 from dmp_execution import gestureExecution
+from kinematics_interface import StateValidity
 from moveit_msgs.msg import DisplayTrajectory
 
 from dmp_generation import dmpPlanTrajectoryPlotter
@@ -57,7 +58,9 @@ if __name__ == '__main__':
 #                         "final_pose" : final_pose,
 #                         "computed_dmp" : computed_dmp}
     rospy.loginfo("gesture_dict['duration] == " + str(gesture_dict["duration"]))
-    plan = gG.getPlan(gesture_dict["initial_pose"], gesture_dict["final_pose"], tau=gesture_dict["duration"], dt=0.05) #, seg_length=int(gesture_dict["duration"]))
+    ge = gestureExecution()
+    curr_joints_pose = ge.getCurrentJointsPose(joint_names)
+    plan = gG.getPlan(curr_joints_pose, gesture_dict["final_pose"], tau=gesture_dict["duration"], dt=0.1) #, seg_length=int(gesture_dict["duration"]))
     rospy.loginfo("Got plan:\n" + str(plan))
     
     rospy.loginfo("dumping plan to yaml")
@@ -65,7 +68,7 @@ if __name__ == '__main__':
     import yaml
     yaml.dump(plan, stream)
     
-    ge = gestureExecution()
+    
     traj = ge.displayTrajFromPlan(plan, joint_names, gesture_dict["initial_pose"])
     rospy.loginfo("Traj is: ")
     rospy.loginfo(str(traj))
@@ -80,6 +83,17 @@ if __name__ == '__main__':
     plot.show()
     
     robot_traj = ge.robotTrajectoryFromPlan(plan, joint_names)
-    rospy.loginfo("Sending trajectoryyy!")
+    rospy.loginfo("checking trajectory validity!")
+    
+    import time
+    init_time = time.time()
+    res = ge.checkTrajectoryValidity(robot_traj, ['right_arm'])
+    final_time = time.time()
+    rospy.loginfo("Took " + str(final_time - init_time) + " s to check the trajectory of " + str(len(robot_traj.joint_trajectory.points)) + " points")
+    if res:
+        print "CORRECT TRAJECTORY"
+    else:
+        print "ERRONEUS TRAJECTORY"
+    
     ge.sendTrajectory(robot_traj, True)
     
