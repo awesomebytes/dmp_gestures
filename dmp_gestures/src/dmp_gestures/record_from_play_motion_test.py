@@ -26,8 +26,9 @@ PLAY_MOTION_AS = "/play_motion"
 if __name__ == '__main__':
     rospy.init_node("test_recordfromplaymotion_class")
     rospy.loginfo("Initializing test.")
-    gesture_name = 'wave'
+    gesture_name = 'yes'
     rfpm = RecordFromPlayMotion()
     motiondata = rfpm.play_and_record(gesture_name, bag_name = gesture_name)
     rospy.loginfo("Test done, there should be a bag named: " + gesture_name + ".bag")
+    rospy.loginfo("The generated data for this motion is: " + str(motiondata))
     

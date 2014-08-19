@@ -162,14 +162,14 @@ class gestureGeneration():
         self.makeSetActiveRequest(resp.dmp_list)
         self.resp_from_makeLFDRequest = resp
         
-        rospy.loginfo("Response of makeLDFRequest is:\n" + str(self.resp_from_makeLFDRequest) )
+        #rospy.loginfo("Response of makeLDFRequest is:\n" + str(self.resp_from_makeLFDRequest) )
         
         rospy.loginfo("Joints:" + str(joints))
         rospy.loginfo("Initial pose:" + str(self.gesture_x0))
         rospy.loginfo("Final pose: " + str(self.gesture_goal))
         time = self.info_bag['duration']
         rospy.loginfo("Time: " + str(time))
-        rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
+        #rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
         gesture_dict = self.saveGestureYAML(bagname + ".yaml", bagname, joints, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest, time)
         return gesture_dict
 
@@ -188,7 +188,7 @@ class gestureGeneration():
                         "final_pose" : final_pose,
                         "computed_dmp" : computed_dmp,
                         "duration" : time}
-        rospy.loginfo("gesture_dict:\n" + str(gesture_dict))
+        #rospy.loginfo("gesture_dict:\n" + str(gesture_dict))
         stream = file(yamlname, "w")
         yaml.dump(gesture_dict, stream)
         self.resp_from_makeLFDRequest = gesture_dict["computed_dmp"]
@@ -306,7 +306,7 @@ class gestureGeneration():
 
 class dmpPlanTrajectoryPlotter():
     def __init__(self):
-        print "init dmpPlanTrajectoryPlotter"
+        print "dmpPlanTrajectoryPlotter initialized."
         
     def planToPlot(self, plan, joint_names):
         """Given a GetDMPPlanResponse make a plot of the trajectory"""
@@ -325,8 +325,8 @@ class dmpPlanTrajectoryPlotter():
         for point in plan.plan.points:
             num_points += 1
             joint_vals = point.positions
-            print joint_names
-            print joint_vals
+#             print joint_names
+#             print joint_vals
             counter = 0
             for joint_val in  joint_vals:
                 trajectories[counter].append(joint_val)

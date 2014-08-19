@@ -59,7 +59,7 @@ class gestureExecution():
         if len(groups) > 0:
             groups_to_check = groups
         else:
-            groups_to_check = [] # Automagic group deduction TODO
+            groups_to_check = ['both_arms_torso'] # Automagic group deduction... giving a group that includes everything
         for traj_point in robot_trajectory.joint_trajectory.points:
             rs = RobotState()
             rs.joint_state.name = robot_trajectory.joint_trajectory.joint_names
@@ -90,11 +90,13 @@ class gestureExecution():
 
     def sendTrajectory(self, robot_trajectory, wait_for_execution=True):
         """Given a RobotTrajectory send it to the controllers firstly checking it's trajectory validity"""
-        #self.checkTrajectoryValidity(robot_trajectory)
-        ektr = createExecuteKnownTrajectoryRequest(robot_trajectory, wait_for_execution)
-        rospy.loginfo("Sending trajectory...")
-        self.execute_known_traj_service.call(ektr)
-        rospy.loginfo("Finished traj!")
+        if self.checkTrajectoryValidity(robot_trajectory):
+            ektr = createExecuteKnownTrajectoryRequest(robot_trajectory, wait_for_execution)
+            rospy.loginfo("Sending trajectory...")
+            self.execute_known_traj_service.call(ektr)
+            rospy.loginfo("Finished traj!")
+        else:
+            rospy.logerr("Trajectory in collision at some point, won't be sent to controllers.")
         
     def getCurrentJointsPose(self, joint_names):
         """Given a set of joints (or group?) get the list of positions of these joints"""

@@ -122,6 +122,8 @@ class RecordFromPlayMotion():
         if not rospy.has_param(PLAYMOTIONPATH + motion_name):
             rospy.logerr("Motion named: " + motion_name + " does not exist in param server at " + PLAYMOTIONPATH + motion_name)
             return
+        else:
+            rospy.loginfo("Found motion " + motion_name + " in param server at " + PLAYMOTIONPATH + motion_name)
         # Get it's info
         motion_info = rospy.get_param(PLAYMOTIONPATH + motion_name)
         # check if joints was specified, if not, get the joints to actually save
@@ -129,15 +131,19 @@ class RecordFromPlayMotion():
             joints_to_record = joints
         else:
             joints_to_record = motion_info['joints']
+        rospy.loginfo("Got joints: " + str(joints_to_record))
         # Prepare subscriber
         self.joint_states_topic = DEFAULT_JOINT_STATES
         # Creating a subscriber to joint states
+        rospy.loginfo("Subscribing to joint states...")
         self.start_recording = False
         self.joint_states_subs = rospy.Subscriber(self.joint_states_topic, JointState, self.joint_states_cb)
         # play motion
+        rospy.loginfo("Playing motion!")
         pm_goal = PlayMotionGoal(motion_name, False, 0)
         self.play_motion_as.send_goal(pm_goal)
         # record bag
+        rospy.loginfo("Recording in bag!")
         self.current_rosbag_name = bag_name
         self.current_rosbag = rosbag.Bag(self.current_rosbag_name + '.bag', 'w')
         self.start_recording = True
@@ -148,8 +154,13 @@ class RecordFromPlayMotion():
             if state == GoalStatus.ABORTED or state == GoalStatus.SUCCEEDED:
                 done_with_motion = True
                 self.start_recording = False
+            elif state != GoalStatus.PENDING and state != GoalStatus.ACTIVE:
+                rospy.logerr("We got state " + str(state) + " unexpectedly, motion failed. Aborting.")
+                self.current_rosbag.close()
+                return None
         # when motion finishes close bag
         self.current_rosbag.close()
+        rospy.loginfo("Motion finished and closed bag.")
         motion_data = {'motion_name' : motion_name,
                        'joints' : joints_to_record,
                        'rosbag_name': self.current_rosbag_name + '.bag'}

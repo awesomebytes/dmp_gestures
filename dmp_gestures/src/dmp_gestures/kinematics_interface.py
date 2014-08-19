@@ -136,7 +136,7 @@ class StateValidity():
     def close_SV(self):
         self.sv_srv.close()
         
-    def getStateValidity(self, robot_state, group_name, constraints=None):
+    def getStateValidity(self, robot_state, group_name='both_arms_torso', constraints=None):
         """Given a RobotState and a group name and an optional Constraints
         return the validity of the State"""
         gsvr = GetStateValidityRequest()
