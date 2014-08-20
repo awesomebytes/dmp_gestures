@@ -59,7 +59,7 @@ if __name__ == '__main__':
     rospy.loginfo("gesture_dict['duration] == " + str(gesture_dict["duration"]))
     ge = gestureExecution()
     curr_joints_pose = ge.getCurrentJointsPose(joint_names)
-    plan = gG.getPlan(curr_joints_pose, gesture_dict["final_pose"], tau=gesture_dict["duration"], dt=0.05) #, seg_length=int(gesture_dict["duration"]))
+    plan = gG.getPlan(curr_joints_pose, gesture_dict["final_pose"], tau=gesture_dict["duration"], dt=0.02) #, seg_length=int(gesture_dict["duration"]))
     #rospy.loginfo("Got plan:\n" + str(plan))
     
 #     rospy.loginfo("dumping plan to yaml")

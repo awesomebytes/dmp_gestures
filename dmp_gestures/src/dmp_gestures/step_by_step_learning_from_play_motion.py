@@ -71,7 +71,7 @@ if __name__ == '__main__':
     rospy.loginfo("The plan should take as long as the learnt gesture: " + str(gesture_dict["duration"]) + "s and we compute ")
     rospy.loginfo("points every dt = 0.1s.")
     init_time = time.time()
-    plan = gG.getPlan(curr_joints_pose, gesture_dict["final_pose"], tau=gesture_dict["duration"], dt=0.1)
+    plan = gG.getPlan(curr_joints_pose, gesture_dict["final_pose"], tau=gesture_dict["duration"], dt=0.02)
     rospy.loginfo("It took " + str(time.time() - init_time ) + "s to get the plan.")
     
     rospy.loginfo("Now we display the plan in Rviz. You need a MotionPlanning plugin set (comes with MoveIt!) with Planned Path activated. State display time is recommended to be at REALTIME.")
