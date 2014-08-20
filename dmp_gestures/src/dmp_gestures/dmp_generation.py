@@ -19,6 +19,8 @@ from dmp.srv import GetDMPPlan, GetDMPPlanRequest,LearnDMPFromDemo, LearnDMPFrom
 from dmp.msg import DMPTraj, DMPData, DMPPoint
 from sensor_msgs.msg import JointState
 from moveit_msgs.srv import GetPositionFK, GetPositionFKRequest, GetPositionFKResponse, GetPositionIK, GetPositionIKRequest, GetPositionIKResponse
+from scipy.interpolate import interp1d
+import time
 
 DEFAULT_JOINT_STATES = "/joint_states"
 DEFAULT_FK_SERVICE = "/compute_fk"
@@ -128,7 +130,7 @@ class gestureGeneration():
         
         # Create a DMP from a X-number of joints trajectory
         dims = len(joints) # number of dims as number of joints
-        dt = 1.0
+        dt = 0.02#1.0
         K = 100
         D = 2.0 * np.sqrt(K)
         num_bases = bases_rel_to_time
@@ -172,6 +174,125 @@ class gestureGeneration():
         #rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
         gesture_dict = self.saveGestureYAML(bagname + ".yaml", bagname, joints, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest, time)
         return gesture_dict
+
+    def loadGestureFromBagJointStatesAndRemoveJerkiness(self, bagname, joints, frequency_to_downsample=15):
+        """Load gesture from the bag name given and remove jerkiness by downsampling and
+        interpolating with a cubic spline """
+        # get bag info
+        self.info_bag = yaml.load(subprocess.Popen(['rosbag', 'info', '--yaml', bagname],
+                                                    stdout=subprocess.PIPE).communicate()[0])
+        bases_rel_to_time = math.ceil(self.info_bag['duration'] * 20) # empirically for every second 20 bases it's ok
+        
+        
+        # Create a DMP from a X-number of joints trajectory
+        dims = len(joints) # number of dims as number of joints
+        dt = 0.02#1.0
+        K = 100
+        D = 2.0 * np.sqrt(K)
+        num_bases = bases_rel_to_time
+    
+        # Fill up traj with real trajectory points  
+        traj = []  
+        # Also fill up downsampled traj
+        downsampled_traj = []
+        bag = rosbag.Bag(bagname)
+        first_point = True
+        num_msgs = 0
+        num_downsampled_data_points = 0
+        for topic, msg, t in bag.read_messages(topics=[DEFAULT_JOINT_STATES]):
+            num_msgs += 1
+            # Get the joint and it's values...
+            js = msg # JointState()
+            # Process interesting joints here
+            names, positions = self.getNamesAndMsgList(joints, msg)
+            if num_msgs % frequency_to_downsample == 0:
+                num_downsampled_data_points += 1
+                downsampled_traj.append(positions)
+            # Append interesting joints here
+            traj.append(positions)
+            if first_point:
+                # Store first point
+                self.gesture_x0 = positions
+                first_point = False
+        bag.close()
+        # Store last point
+        self.gesture_goal = positions
+        
+        # Compute the difference between initial and final point
+        for val1, val2 in zip(self.gesture_x0, self.gesture_goal):
+            self.gesture_difference.append(val2-val1)
+        
+        print str(len(traj)) + " points in example traj. Using " + str(num_bases) + " num_bases"
+        print "Downsampled traj has: " + str(len(downsampled_traj)) + " points"
+        
+        trajs_by_joint = self.getTrajectoriesByJoint(downsampled_traj) # Checked, does it's job
+        splined_trajs = []
+        for traj in trajs_by_joint:
+            # Now we do a cubic spline between the points to filter jerkiness
+            ticks = range(0, num_downsampled_data_points)
+            cubic_spline_func = interp1d(ticks, traj, kind='cubic')
+            ticks_as_array = np.array(ticks)
+            # We will end with the same number of points than the initial trajectory
+            # TODO: Check if we can just get rid of some of them
+            new_ticks = np.linspace(ticks_as_array.min(), ticks_as_array.max(), num_msgs)
+            filtered_trajectory = cubic_spline_func(new_ticks)
+            splined_trajs.append(filtered_trajectory.tolist())
+            # Here the trajectories have the original size
+            
+        dmp_friendly_filtered_trajs = self.getTrajectoriesForDMP(splined_trajs)
+        resp = self.makeLFDRequest(dims, dmp_friendly_filtered_trajs, dt, K, D, num_bases)
+        #Set it as the active DMP
+        self.makeSetActiveRequest(resp.dmp_list)
+        self.resp_from_makeLFDRequest = resp
+        
+        #rospy.loginfo("Response of makeLDFRequest is:\n" + str(self.resp_from_makeLFDRequest) )
+        
+        rospy.loginfo("Joints:" + str(joints))
+        rospy.loginfo("Initial pose:" + str(self.gesture_x0))
+        rospy.loginfo("Final pose: " + str(self.gesture_goal))
+        time = self.info_bag['duration']
+        rospy.loginfo("Time: " + str(time))
+        #rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
+        gesture_dict = self.saveGestureYAML(bagname + ".yaml", bagname, joints, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest, time)
+        return gesture_dict
+
+    def getTrajectoriesByJoint(self, points_joint_state):
+        """Given the trajectories in a list of lists where every element
+        in each list is the value for one joint, return a list of lists where every list is
+        the values for only one joint"""
+#         print "points_joint_state has len: " + str(len(points_joint_state))
+#         print "and each sublist has len: " + str(len(points_joint_state[0]))
+        number_of_joints = len(points_joint_state[0])
+        trajectories_by_joint = []
+        # Prepare number of lists
+        for joint_num in range(number_of_joints):
+            trajectories_by_joint.append([])
+#         print "Trajectories_by_joint preparing has len:" + str(len(trajectories_by_joint))
+        num_point = 0
+        for point in points_joint_state:
+            num_point += 1
+#             print "  Point #" + str(num_point)
+            for joint_num in range(number_of_joints):
+#                 print "    joint #" + str(joint_num)
+#                 print "       Appending: " + str(point[joint_num])
+                trajectories_by_joint[joint_num].append(point[joint_num])
+#         for joint_traj in trajectories_by_joint:
+#             print "One joint traj ends being: " + str(joint_traj)
+        return trajectories_by_joint
+
+    def getTrajectoriesForDMP(self, trajectories_by_joint):
+        """Given a trajectories by joint give the expected input for DMP messaging"""
+        print "trajectories_by_joint has len: " + str(len(trajectories_by_joint))
+        print "and each sublist has len: " + str(len(trajectories_by_joint[0]))
+        points_joint_state = []
+#         print "From trajectories_by_joint: "
+#         print trajectories_by_joint
+#         print "\n\nWe went to array2d:"
+        array2d = np.array(trajectories_by_joint)
+#         print array2d
+        for column in range(len(trajectories_by_joint[0])):
+            points_joint_state.append( array2d[:,column].tolist())
+        return points_joint_state
 
     def saveGestureYAML(self, yamlname, name, joints, initial_pose, final_pose, computed_dmp, time):
         """Given the info of the gesture computed with the DMP server save it into a yaml file.
@@ -223,13 +344,15 @@ class gestureGeneration():
         d_gains = [D_gain]*dims
     
         print "Starting ..."
+        init_time = time.time()
         rospy.wait_for_service('learn_dmp_from_demo')
         try:
             lfd = rospy.ServiceProxy('learn_dmp_from_demo', LearnDMPFromDemo)
             resp = lfd(demotraj, k_gains, d_gains, num_bases)
         except rospy.ServiceException, e:
             print "Service call failed: %s"%e
-        print "LfD done"
+        fin_time = time.time()
+        print "LfD done, took: " + str(fin_time - init_time)
     
         return resp
 
@@ -247,6 +370,7 @@ class gestureGeneration():
                         seg_length, tau, dt, integrate_iter):
         """Generate a plan from a DMP """
         print "Starting DMP planning..."
+        init_time = time.time()
         rospy.wait_for_service('get_dmp_plan')
         try:
             gdp = rospy.ServiceProxy('get_dmp_plan', GetDMPPlan)
@@ -254,7 +378,8 @@ class gestureGeneration():
                        seg_length, tau, dt, integrate_iter)
         except rospy.ServiceException, e:
             print "Service call failed: %s"%e
-        print "DMP planning done"
+        fin_time = time.time()
+        print "DMP planning done, took: " + str(fin_time - init_time)
     
         return resp
 
@@ -316,7 +441,7 @@ class dmpPlanTrajectoryPlotter():
             plot.set_xlabel('time')
             plot.set_ylabel('position')
             plot.set_title(joint_name)
-        # Read the bag and store the arrays for each plot
+        # Read the plan and store the arrays for each plot
         trajectories = []
         # prepare somewhere to accumulate the data
         for joint in joint_names:

@@ -10,11 +10,13 @@ This file contains execution related classes.
 
 import rospy
 from dmp.srv import GetDMPPlan, GetDMPPlanRequest, GetDMPPlanResponse,LearnDMPFromDemo, LearnDMPFromDemoRequest, SetActiveDMP, SetActiveDMPRequest
-from moveit_msgs.msg import RobotState, RobotTrajectory, DisplayTrajectory
+from moveit_msgs.msg import RobotState, RobotTrajectory, DisplayTrajectory, DisplayRobotState
 from trajectory_msgs.msg import JointTrajectoryPoint, JointTrajectory
 from moveit_msgs.srv import ExecuteKnownTrajectory, ExecuteKnownTrajectoryRequest, ExecuteKnownTrajectoryResponse
 from sensor_msgs.msg import JointState
 from kinematics_interface import StateValidity
+from moveit_msgs.msg._DisplayRobotState import DisplayRobotState
+import time
 
 DEFAULT_JOINT_STATES = '/joint_states'
 EXECUTE_KNOWN_TRAJ_SRV = '/execute_kinematic_path'
@@ -36,6 +38,8 @@ class gestureExecution():
         self.execute_known_traj_service.wait_for_service()
         rospy.loginfo("Connected.")
         self.sv = StateValidity()
+        self.robot_state_collision_pub = rospy.Publisher('/robot_collision_state', DisplayRobotState)
+        rospy.sleep(0.1) # Give time to the publisher to register
         
     def robotTrajectoryFromPlan(self, plan, joint_names):
         """Given a dmp plan (GetDMPPlanResponse) create a RobotState to be able to visualize what it consists and also
@@ -56,6 +60,7 @@ class gestureExecution():
         returns True if valid, False otherwise
         It's considered not valid if any point is not valid"""
         #r = RobotTrajectory()
+        init_time = time.time()
         if len(groups) > 0:
             groups_to_check = groups
         else:
@@ -68,7 +73,13 @@ class gestureExecution():
                 result = self.sv.getStateValidity(rs, group)#, constraints)
                 if not result.valid: # if one point is not valid, the trajectory is not valid
                     rospy.logerr("Trajectory is not valid at point (RobotState):" + str(rs) + "with result of StateValidity: " + str(result))
+                    rospy.logerr("published in /robot_collision_state the conflicting state")
+                    drs = DisplayRobotState()
+                    drs.state = rs
+                    self.robot_state_collision_pub.publish(drs)
                     return False
+        fin_time = time.time()
+        rospy.logwarn("Trajectory validity of " + str(len(robot_trajectory.joint_trajectory.points)) + " points took " + str(fin_time - init_time))
         return True
         
     

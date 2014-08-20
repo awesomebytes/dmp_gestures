@@ -23,18 +23,10 @@ from dmp_generation import dmpPlanTrajectoryPlotter
 
 if __name__ == '__main__':
     rospy.init_node("step_by_step_learn_from_play_motion")
-    rospy.loginfo("Preparing nodes...")
-    # Get publisher for displaying generated trajectory TODO: add this to the class itself
-    pub = rospy.Publisher('/move_group/display_planned_path', DisplayTrajectory)
-    # Start gesture generator
-    gG = gestureGeneration()
-    # Start gesture executor 
-    ge = gestureExecution()
+    rospy.loginfo("Preparing recorder...")
     # Start motion recorder
     rfpm = RecordFromPlayMotion()
-    # Start plotter
-    dp = dmpPlanTrajectoryPlotter()
-    rospy.loginfo("Nodes initialized.")
+
     # TODO: give a list of the available motions getting them from param server
     motion_name = str(raw_input('Write the name of the motion to play-and-record: '))
     rospy.loginfo("Got as input: " + str(motion_name))
@@ -51,8 +43,20 @@ if __name__ == '__main__':
 #      'rosbag_name': 'yes.bag',
 #      'motion_name': 'yes'}
     joint_names = motiondata['joints']
+    rospy.loginfo("Preparing other nodes...")
+    # Get publisher for displaying generated trajectory TODO: add this to the class itself
+    pub = rospy.Publisher('/move_group/display_planned_path', DisplayTrajectory)
+    # Start gesture generator
+    gG = gestureGeneration()
+    # Start gesture executor 
+    ge = gestureExecution()
+    # Start plotter
+    dp = dmpPlanTrajectoryPlotter()
+    rospy.loginfo("Nodes initialized.")
+    
     rospy.loginfo("Now we will generate a DMP from this bag.")
-    gesture_dict = gG.loadGestureFromBagJointStates(motion_name +".bag", joint_names)
+    #gesture_dict = gG.loadGestureFromBagJointStates(motion_name +".bag", joint_names)
+    gesture_dict = gG.loadGestureFromBagJointStatesAndRemoveJerkiness(motion_name +".bag", joint_names)
     
     copy_gest_dict = copy.deepcopy(gesture_dict)
     del copy_gest_dict['computed_dmp']
