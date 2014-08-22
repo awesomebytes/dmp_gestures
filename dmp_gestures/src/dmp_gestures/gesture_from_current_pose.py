@@ -84,4 +84,7 @@ if __name__ == '__main__':
     robot_traj = ge.robotTrajectoryFromPlan(plan, joint_names)
     rospy.loginfo("Sending trajectoryyy!")
     ge.sendTrajectory(robot_traj, True)
+    # Does not work
+    #ge.sliceTrajectoryAndSend(robot_traj)
+    #ge.sliceTrajectoryRewritingTimesAndSend(robot_traj)
     

@@ -57,6 +57,7 @@ if __name__ == '__main__':
     rospy.loginfo("Now we will generate a DMP from this bag.")
     #gesture_dict = gG.loadGestureFromBagJointStates(motion_name +".bag", joint_names)
     gesture_dict = gG.loadGestureFromBagJointStatesAndRemoveJerkiness(motion_name +".bag", joint_names)
+    #gesture_dict = gG.loadGestureFromBagJointStatesAndDownsample(motion_name +".bag", joint_names)
     
     copy_gest_dict = copy.deepcopy(gesture_dict)
     del copy_gest_dict['computed_dmp']

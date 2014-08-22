@@ -256,6 +256,90 @@ class gestureGeneration():
         gesture_dict = self.saveGestureYAML(bagname + ".yaml", bagname, joints, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest, time)
         return gesture_dict
 
+    def loadGestureFromBagJointStatesAndDownsample(self, bagname, joints, frequency_to_downsample=15):
+        """This does not give good results. Load gesture from the bag name given and remove jerkiness by downsampling and
+        interpolating with a cubic spline """
+        # get bag info
+        self.info_bag = yaml.load(subprocess.Popen(['rosbag', 'info', '--yaml', bagname],
+                                                    stdout=subprocess.PIPE).communicate()[0])
+        bases_rel_to_time = math.ceil(self.info_bag['duration'] * 20) # empirically for every second 20 bases it's ok
+        
+        
+        # Create a DMP from a X-number of joints trajectory
+        dims = len(joints) # number of dims as number of joints
+        dt = 0.02#1.0
+        K = 100
+        D = 2.0 * np.sqrt(K)
+        num_bases = bases_rel_to_time
+    
+        # Fill up traj with real trajectory points  
+        traj = []  
+        # Also fill up downsampled traj
+        downsampled_traj = []
+        bag = rosbag.Bag(bagname)
+        first_point = True
+        num_msgs = 0
+        num_downsampled_data_points = 0
+        for topic, msg, t in bag.read_messages(topics=[DEFAULT_JOINT_STATES]):
+            num_msgs += 1
+            # Get the joint and it's values...
+            js = msg # JointState()
+            # Process interesting joints here
+            names, positions = self.getNamesAndMsgList(joints, msg)
+            if num_msgs % frequency_to_downsample == 0:
+                num_downsampled_data_points += 1
+                downsampled_traj.append(positions)
+            # Append interesting joints here
+            traj.append(positions)
+            if first_point:
+                # Store first point
+                self.gesture_x0 = positions
+                first_point = False
+        bag.close()
+        # Store last point
+        self.gesture_goal = positions
+        
+        # Compute the difference between initial and final point
+        for val1, val2 in zip(self.gesture_x0, self.gesture_goal):
+            self.gesture_difference.append(val2-val1)
+        
+
+#         trajs_by_joint = self.getTrajectoriesByJoint(downsampled_traj) # Checked, does it's job
+#         splined_trajs = []
+#         for traj in trajs_by_joint:
+#             # Now we do a cubic spline between the points to filter jerkiness
+#             ticks = range(0, num_downsampled_data_points)
+#             cubic_spline_func = interp1d(ticks, traj, kind='cubic')
+#             ticks_as_array = np.array(ticks)
+#             # We will end with the same number of points than the initial trajectory
+#             # TODO: Check if we can just get rid of some of them
+#             new_ticks = np.linspace(ticks_as_array.min(), ticks_as_array.max(), num_msgs)
+#             filtered_trajectory = cubic_spline_func(new_ticks)
+#             splined_trajs.append(filtered_trajectory.tolist())
+#             # Here the trajectories have the original size
+#             
+#         dmp_friendly_filtered_trajs = self.getTrajectoriesForDMP(splined_trajs)
+        num_bases_rel_to_traj_size = len(downsampled_traj) * 2
+        num_bases = num_bases_rel_to_traj_size
+        print str(len(traj)) + " points in example traj. Using " + str(num_bases) + " num_bases"
+        print "Downsampled traj has: " + str(len(downsampled_traj)) + " points"
+        resp = self.makeLFDRequest(dims, downsampled_traj, dt, K, D, num_bases)
+        #Set it as the active DMP
+        self.makeSetActiveRequest(resp.dmp_list)
+        self.resp_from_makeLFDRequest = resp
+        
+        #rospy.loginfo("Response of makeLDFRequest is:\n" + str(self.resp_from_makeLFDRequest) )
+        
+        rospy.loginfo("Joints:" + str(joints))
+        rospy.loginfo("Initial pose:" + str(self.gesture_x0))
+        rospy.loginfo("Final pose: " + str(self.gesture_goal))
+        time = self.info_bag['duration']
+        rospy.loginfo("Time: " + str(time))
+        #rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
+        gesture_dict = self.saveGestureYAML(bagname + ".yaml", bagname, joints, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest, time)
+        return gesture_dict
+
+
     def getTrajectoriesByJoint(self, points_joint_state):
         """Given the trajectories in a list of lists where every element
         in each list is the value for one joint, return a list of lists where every list is

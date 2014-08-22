@@ -17,6 +17,8 @@ from sensor_msgs.msg import JointState
 from kinematics_interface import StateValidity
 from moveit_msgs.msg._DisplayRobotState import DisplayRobotState
 import time
+from moveit_msgs.msg._MoveItErrorCodes import MoveItErrorCodes
+import copy
 
 DEFAULT_JOINT_STATES = '/joint_states'
 EXECUTE_KNOWN_TRAJ_SRV = '/execute_kinematic_path'
@@ -104,10 +106,155 @@ class gestureExecution():
         if self.checkTrajectoryValidity(robot_trajectory):
             ektr = createExecuteKnownTrajectoryRequest(robot_trajectory, wait_for_execution)
             rospy.loginfo("Sending trajectory...")
+            time_init = time.time()
+            ros_time_init = rospy.Time.now()
             self.execute_known_traj_service.call(ektr)
-            rospy.loginfo("Finished traj!")
+            ros_time_fin = rospy.Time.now()
+            time_fin = time.time()
+            ros_time_diff = ros_time_fin - ros_time_init
+            
+            rospy.loginfo("Finished trajectory! The service call took (realtime): " + str(time_fin - time_init) + " (ros time): " + str(ros_time_diff.to_sec()) + "s " + str(ros_time_diff.to_nsec()) + "ns")
         else:
             rospy.logerr("Trajectory in collision at some point, won't be sent to controllers.")
+        
+    def sliceTrajectoryAndSend(self, robot_trajectory, slice_time=2.0, call_delay=0.3, wait_for_execution=True):
+        """DOES NOT WORK AS THE EXECUTION SERVICE STOPS BETWEEN TRAJECTORIESGiven a RobotTrajectory send it to the controllers dividing it in slices of slice_time seconds
+        to give an "online" trajectory validity checking
+        By empirical results the delay between the trajectory real duration is about 0.3s (that is the time
+        needed for the moveit node to deduce which controllers to use and actually send the trajectory)"""
+        sliced_trajectories = []
+        rt = RobotTrajectory()
+        rt.joint_trajectory.joint_names = robot_trajectory.joint_trajectory.joint_names
+        # We know times start from 0.0 (as we generated them previously)
+        next_slice_time = rospy.Duration(slice_time) # first slice at slice_time
+#         slice_counter = 0
+        for idx, point in enumerate(robot_trajectory.joint_trajectory.points):
+            rt.joint_trajectory.points.append(point)
+#             print "point time: " + str(point.time_from_start.to_sec())
+#             print "slice_time: " + str(slice_time)
+#             print "next_slice_time: " + str(next_slice_time.to_sec())
+            if next_slice_time <= point.time_from_start: # Every time we get into the slicing time we generate a new traj
+#                 print "   ----SLICING----"
+#                 print "Adding traj with " + str(len(rt.joint_trajectory.points)) + " points"
+#                 slice_counter += 1
+#                 print "This is slice #" + str(slice_counter)
+                sliced_trajectories.append(rt)
+                rt = RobotTrajectory() # Create a new one
+                rt.joint_trajectory.joint_names = robot_trajectory.joint_trajectory.joint_names
+                next_slice_time = point.time_from_start + rospy.Duration(slice_time)
+        
+        rospy.loginfo("We sliced the trajectory of " + str(len(robot_trajectory.joint_trajectory.points)) + " points in "\
+                      + str(len(sliced_trajectories)) + " trajectories of max " + str(len(sliced_trajectories[0].joint_trajectory.points)) + " points" )
+        last_sent_time = None
+        for id, traj in enumerate(sliced_trajectories):
+            if self.checkTrajectoryValidity(traj):
+                ektr = createExecuteKnownTrajectoryRequest(traj, False) # This was false
+                if id > 0:
+                    # Wait for the trajectory to be executed until the point we can send the next one...
+                    rospy.loginfo("Waiting for last trajectory to achieve the time where sending the next trajectory will connect them nicely")
+                    pre_wait_time = rospy.Time.now()
+                    while rospy.Time.now() - last_sent_time < rospy.Duration(slice_time):# - call_delay):
+                        rospy.sleep(0.001)
+                    after_wait_time = rospy.Time.now()
+                    rospy.loginfo("We waited for " + str((after_wait_time - pre_wait_time).to_sec()))
+                rospy.loginfo("Sending trajectory... #" + str(id) + "/" + str(len(sliced_trajectories)))
+                if last_sent_time != None:
+                    rospy.loginfo("We took from last sent time to now: " + str((rospy.Time.now() -last_sent_time).to_sec()))
+                last_sent_time = rospy.Time.now()
+                trajectory_executed = False
+                while not trajectory_executed:
+                    answer = self.execute_known_traj_service.call(ektr)
+                    #ExecuteKnownTrajectoryResponse.error_code.val
+                    if answer.error_code.val == MoveItErrorCodes.SUCCESS:
+                        trajectory_executed = True
+                    else:
+                        print "not sleeping"
+                        #rospy.sleep(0.5)
+                    rospy.logwarn("Answer of execute service: " + str(answer))
+                rospy.sleep(slice_time - call_delay)
+                # We actually should rewrite all the times to match with the necessary offset...
+                # Let's try this first!
+
+                rospy.loginfo("Sent trajectory!")
+            else:
+                rospy.logerr("Trajectory in collision at some point, won't be sent to controllers.")
+                break
+
+    def sliceTrajectoryRewritingTimesAndSend(self, robot_trajectory, slice_time=4.0, call_delay=0.008, wait_for_execution=True):
+        """DOES NOT WORK AS THE EXECUTION SERVICE STOPS BETWEEN TRAJECTORIES...Given a RobotTrajectory send it to the controllers dividing it in slices of slice_time seconds
+        to give an "online" trajectory validity checking
+        By empirical results the delay between the trajectory real duration is about 0.3s (that is the time
+        needed for the moveit node to deduce which controllers to use and actually send the trajectory)"""
+        sliced_trajectories = []
+        rt = RobotTrajectory()
+        rt.joint_trajectory.joint_names = robot_trajectory.joint_trajectory.joint_names
+        # We know times start from 0.0 (as we generated them previously)
+        next_slice_time = rospy.Duration(slice_time) # first slice at slice_time
+#         slice_counter = 0
+        for idx, point in enumerate(robot_trajectory.joint_trajectory.points):
+#             print "point time: " + str(point.time_from_start.to_sec())
+#             print "slice_time: " + str(slice_time)
+#             print "next_slice_time: " + str(next_slice_time.to_sec())
+            if next_slice_time <= point.time_from_start: # Every time we get into the slicing time we generate a new traj
+#                 print "   ----SLICING----"
+#                 print "Adding traj with " + str(len(rt.joint_trajectory.points)) + " points"
+#                 slice_counter += 1
+#                 print "This is slice #" + str(slice_counter)
+                sliced_trajectories.append(rt)
+                rt = RobotTrajectory() # Create a new one
+                rt.joint_trajectory.joint_names = robot_trajectory.joint_trajectory.joint_names
+                next_slice_time = point.time_from_start + rospy.Duration(slice_time)
+
+            new_time = point.time_from_start.to_sec() % slice_time # We want times from 0.0 to slice_time
+            new_point = copy.deepcopy(point)
+            new_point.time_from_start = rospy.Duration(new_time)
+            rt.joint_trajectory.points.append(new_point)
+            print "Old time: " + str(point.time_from_start.to_sec()) + " new time: " + str(new_point.time_from_start.to_sec())
+        sliced_trajectories.append(rt) # Append last trajectory
+        
+        rospy.loginfo("We sliced the trajectory of " + str(len(robot_trajectory.joint_trajectory.points)) + " points in "\
+                      + str(len(sliced_trajectories)) + " trajectories of max " + str(len(sliced_trajectories[0].joint_trajectory.points)) + " points" )
+        last_sent_time = None
+        initial_time = rospy.Time.now()
+        for id, traj in enumerate(sliced_trajectories):
+            if self.checkTrajectoryValidity(traj):
+                ektr = createExecuteKnownTrajectoryRequest(traj, False)
+                if id > 0:
+                    # Wait for the trajectory to be executed until the point we can send the next one...
+                    rospy.loginfo("Waiting for last trajectory to achieve the time where sending the next trajectory will connect them nicely")
+                    pre_wait_time = rospy.Time.now()
+                    rospy.loginfo("  [] Before wait time: " + str((rospy.Time.now() - initial_time).to_sec()))
+                    while rospy.Time.now() - last_sent_time < rospy.Duration(slice_time - call_delay):
+                        rospy.sleep(0.001)
+                    after_wait_time = rospy.Time.now()
+                    rospy.loginfo("  [] After wait time: " + str((rospy.Time.now() - initial_time).to_sec()))
+                    rospy.loginfo("We waited for " + str((after_wait_time - pre_wait_time).to_sec()))
+                rospy.loginfo("Sending trajectory... #" + str(id) + "/" + str(len(sliced_trajectories)))
+                if last_sent_time != None:
+                    rospy.loginfo("We took from last sent time to now: " + str((rospy.Time.now() -last_sent_time).to_sec()))
+                last_sent_time = rospy.Time.now()
+                trajectory_executed = False
+                while not trajectory_executed:
+                    rospy.loginfo("  [] Sending traj at time: " + str((rospy.Time.now() - initial_time).to_sec()))
+                    answer = self.execute_known_traj_service.call(ektr)
+                    rospy.loginfo("  [] Service call done at time: " + str((rospy.Time.now() - initial_time).to_sec()))
+                    #ExecuteKnownTrajectoryResponse.error_code.val
+                    if answer.error_code.val == MoveItErrorCodes.SUCCESS:
+                        trajectory_executed = True
+                    else:
+                        #print "not sleeping"
+                        rospy.sleep(0.01)
+                    rospy.logwarn("Answer of execute service: " + str(answer))
+                
+                # We actually should rewrite all the times to match with the necessary offset...
+                # Let's try this first!
+
+                rospy.loginfo("Sent trajectory!")
+            else:
+                rospy.logerr("Trajectory in collision at some point, won't be sent to controllers.")
+                break
+
+
         
     def getCurrentJointsPose(self, joint_names):
         """Given a set of joints (or group?) get the list of positions of these joints"""
