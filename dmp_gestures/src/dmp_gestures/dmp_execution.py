@@ -114,8 +114,10 @@ class gestureExecution():
             ros_time_diff = ros_time_fin - ros_time_init
             
             rospy.loginfo("Finished trajectory! The service call took (realtime): " + str(time_fin - time_init) + " (ros time): " + str(ros_time_diff.to_sec()) + "s " + str(ros_time_diff.to_nsec()) + "ns")
+            return True
         else:
             rospy.logerr("Trajectory in collision at some point, won't be sent to controllers.")
+            return False
         
     def sliceTrajectoryAndSend(self, robot_trajectory, slice_time=2.0, call_delay=0.3, wait_for_execution=True):
         """DOES NOT WORK AS THE EXECUTION SERVICE STOPS BETWEEN TRAJECTORIESGiven a RobotTrajectory send it to the controllers dividing it in slices of slice_time seconds

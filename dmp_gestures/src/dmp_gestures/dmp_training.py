@@ -74,7 +74,7 @@ class LearnFromEndEffector():
 
 class LearnFromJointState():
     """Manage the learning from joint positions"""
-    def __init__(self, joint_names=[]):
+    def __init__(self):
         """Initialize class.
         @arg joint_names list of strings with the name of the
         joints to subscribe on joint_states."""
@@ -82,21 +82,48 @@ class LearnFromJointState():
         #TODO: make joint states topic a param to change in yaml file
         self.joint_states_topic = DEFAULT_JOINT_STATES
         # Creating a subscriber to joint states
-        self.start = False
+        self.start_recording = False
         self.joint_states_subs = rospy.Subscriber(self.joint_states_topic, JointState, self.joint_states_cb)
-        
+        rospy.loginfo("Connected.")
+        self.current_rosbag_name = "uninitialized_rosbag_name"
+        self.last_joint_states_data = None
+        self.joint_states_accumulator = []
+        self.motion_name = "no_motion_name"
+        self.joints_to_record = []
+
         
     def joint_states_cb(self, data):
         """joint_states topic cb"""
         rospy.logdebug("Received joint_states:\n " + str(data))
-        if self.start:
-            rospy.loginfo("Saving stuff")
+        if self.start_recording:
+            self.joint_states_accumulator.append(data)
 
-    def start_learn(self):
-        self.start = True
+    def start_learn(self, motion_name, joints=[], bag_name="no_bag_name_set"):
+        """Start the learning writting in the accumulator of msgs"""
+        self.current_rosbag_name = bag_name
+        self.start_recording = True
+        if len(joints) > 0:
+            self.joints_to_record = joints
+        else:
+            rospy.logerr("No joints provided to record, aborting")
+            return
 
+    
+    
     def stop_learn(self):
-        self.start = False
+        """Stop the learning writting the bag into disk and returning the info of the motion"""
+        self.start_recording = False
+        self.joint_states_subs.unregister()
+        rospy.loginfo("Recording in bag!")
+        self.current_rosbag = rosbag.Bag(self.current_rosbag_name + '.bag', 'w')
+        for js_msg in self.joint_states_accumulator:
+            self.current_rosbag.write(DEFAULT_JOINT_STATES, js_msg, t=js_msg.header.stamp)
+        self.current_rosbag.close()
+        rospy.loginfo("Motion finished and closed bag.")
+        motion_data = {'motion_name' : self.motion_name,
+                       'joints' : self.joints_to_record,
+                       'rosbag_name': self.current_rosbag_name + '.bag'}
+        return motion_data
 
 class RecordFromPlayMotion():
     """Manage the learning from a play motion gesture"""
