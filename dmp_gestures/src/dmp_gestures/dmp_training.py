@@ -13,12 +13,13 @@ import rosbag
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from moveit_msgs.srv import GetPositionIKRequest, GetPositionIKResponse, GetPositionIK
-from moveit_msgs.msg import MoveItErrorCodes
+from moveit_msgs.msg import MoveItErrorCodes, RobotTrajectory
 from actionlib import SimpleActionClient, GoalStatus
 from play_motion_msgs.msg import PlayMotionAction, PlayMotionGoal, PlayMotionResult
 from helper_functions import moveit_error_dict, goal_status_dict
 import matplotlib.pyplot as plt
 import time
+import tf
 
 DEFAULT_IK_SERVICE = "/compute_ik"
 DEFAULT_JOINT_STATES = "/joint_states"
@@ -40,36 +41,60 @@ class LearnFromEndEffector():
 
         # Initialize class vars
         self.start = False
-        #TODO: make ik_service_name a param to load from a yaml
-        self.ik_service_name = DEFAULT_IK_SERVICE
+#         #TODO: make ik_service_name a param to load from a yaml
+#         self.ik_service_name = DEFAULT_IK_SERVICE
         self.pose_subs = []
-
+        self.pose_accumulators = []
+        self.pose_topics = pose_topics
+        self.groups = groups
+        self.motion_name = "no_motion_name"
+        self.current_bag_name = "no_bag_name"
         # Subscribe to PoseStamped topics
         rospy.loginfo("Subscribing to topics...")
-        for pose_topic in pose_topics:
+        for idx, pose_topic in enumerate(pose_topics):
             rospy.loginfo("Subscribing to '" + pose_topic + "'...")
-            subs = rospy.Subscriber(pose_topic, PoseStamped, self.pose_cb, callback_args=pose_topic)
+            subs = rospy.Subscriber(pose_topic, PoseStamped, self.pose_cb, callback_args=idx)
             self.pose_subs.append(subs)
-            rospy.loginfo("Successful subscription to '" + pose_topic + "'.")
+            rospy.loginfo("Successful subscription to [" + str(idx) + "] '" + pose_topic + "'.")
+            self.pose_accumulators.append([])
 
-        # Get a ServiceProxy for the IK service
-        rospy.loginfo("Waiting for service '" + self.ik_service_name + "'...")
-        rospy.wait_for_service(self.ik_service_name)
-        self.ik_serv = rospy.ServiceProxy(self.ik_service_name, GetPositionIK)
-        rospy.loginfo("Successful connection  to '" + self.ik_service_name + "'.")
+#         # Get a ServiceProxy for the IK service
+#         rospy.loginfo("Waiting for service '" + self.ik_service_name + "'...")
+#         rospy.wait_for_service(self.ik_service_name)
+#         self.ik_serv = rospy.ServiceProxy(self.ik_service_name, GetPositionIK)
+#         rospy.loginfo("Successful connection  to '" + self.ik_service_name + "'.")
 
     def pose_cb(self, data, cb_args):
         """Callback functions for PoseStamped messages.
-        cb_args contains the name of the topic to know which callback is which"""
-        rospy.loginfo("Received from '" + cb_args + "':\n  " + str(data))
+        cb_args contains the idx of the topic to know which callback is which"""
+        rospy.loginfo("Received from [" + str(cb_args) + "] " + self.pose_topics[cb_args] + ":\n  " + str(data))
         if self.start:
-            rospy.loginfo("Saving stuff")
+            self.pose_accumulators[cb_args].append(data)
 
-    def start_learn(self):
+    def start_learn(self, motion_name, bag_name):
+        self.motion_name = motion_name
+        self.current_bag_name = bag_name
         self.start = True
 
     def stop_learn(self):
         self.start = False
+        for idx, pose_topic in enumerate(self.pose_topics):
+            rospy.loginfo("Unsubscribing to '" + pose_topic + "'...")
+            self.pose_subs[idx].unregister()
+        # Write rosbag
+        rospy.loginfo("Recording in bag!")
+        self.current_rosbag = rosbag.Bag(self.current_bag_name + '.bag', 'w')
+        for idx, poselist in enumerate(self.pose_accumulators):
+            for ps in poselist:
+                # pose = PoseStamped()
+                self.current_rosbag.write(self.pose_topics[idx], ps, t=ps.header.stamp)
+        self.current_rosbag.close()
+        rospy.loginfo("Motion finished and closed bag.")
+        motion_data = {'motion_name' : self.motion_name,
+                       'groups' : self.groups, # Get joints from group?
+                       'rosbag_name': self.current_bag_name + '.bag'}
+
+        return motion_data
 
 
 class LearnFromJointState():
@@ -108,8 +133,6 @@ class LearnFromJointState():
             rospy.logerr("No joints provided to record, aborting")
             return
 
-    
-    
     def stop_learn(self):
         """Stop the learning writting the bag into disk and returning the info of the motion"""
         self.start_recording = False
@@ -124,6 +147,56 @@ class LearnFromJointState():
                        'joints' : self.joints_to_record,
                        'rosbag_name': self.current_rosbag_name + '.bag'}
         return motion_data
+
+class LearnFromRobotTrajectory():
+    """Manage the learning from robot trajectory message"""
+    def __init__(self):
+        """Initialize class.
+        @arg joint_names list of strings with the name of the
+        joints to subscribe on joint_states."""
+        rospy.loginfo("Init LearnFromRobotTrajectory()")
+        # Creating a subscriber to joint states
+        self.start_recording = False
+        self.current_rosbag_name = "uninitialized_rosbag_name"
+        self.joint_states_accumulator = []
+        self.motion_name = "no_motion_name"
+        self.joints_to_record = []
+
+    def start_learn(self, robot_traj, motion_name, joints=[], bag_name="no_bag_name_set"):
+        """Start the learning writting in the accumulator of msgs from the RobotTrajectory msg"""
+        self.current_rosbag_name = bag_name
+        self.start_recording = True
+        if len(joints) > 0:
+            self.joints_to_record = joints
+        else:
+            rospy.logerr("No joints provided to record, aborting")
+            return
+        
+        rt =RobotTrajectory()
+        for point in robot_traj.joint_trajectory.points:
+            js = JointState()
+            js.name = robot_traj.joint_trajectory.joint_names
+            js.header.stamp = point.time_from_start
+            js.position = point.positions
+            self.joint_states_accumulator.append(js)
+        
+
+    def stop_learn(self):
+        """Stop the learning writting the bag into disk and returning the info of the motion"""
+        self.start_recording = False
+        rospy.loginfo("Recording in bag!")
+        self.current_rosbag = rosbag.Bag(self.current_rosbag_name + '.bag', 'w')
+        for js_msg in self.joint_states_accumulator:
+            self.current_rosbag.write(DEFAULT_JOINT_STATES, js_msg, t=js_msg.header.stamp)
+        self.current_rosbag.close()
+        rospy.loginfo("Motion finished and closed bag.")
+        motion_data = {'motion_name' : self.motion_name,
+                       'joints' : self.joints_to_record,
+                       'rosbag_name': self.current_rosbag_name + '.bag'}
+        return motion_data
+
+
+
 
 class RecordFromPlayMotion():
     """Manage the learning from a play motion gesture"""
@@ -203,6 +276,60 @@ class RecordFromPlayMotion():
                        'joints' : joints_to_record,
                        'rosbag_name': self.current_rosbag_name + '.bag'}
         return motion_data
+
+
+class RecordPoseStampedFromPlayMotion():
+    """Manage the learning from a play motion gesture"""
+    def __init__(self):
+        rospy.loginfo("Initializing RecordFromPlayMotion")
+        rospy.loginfo("Connecting to AS: '" + PLAY_MOTION_AS + "'")
+        self.play_motion_as = SimpleActionClient(PLAY_MOTION_AS, PlayMotionAction)
+        self.play_motion_as.wait_for_server()
+        rospy.loginfo("Connected.")
+        self.current_rosbag_name = "uninitialized_rosbag_name"
+        self.lfee = LearnFromEndEffector(['/tf_to_ps'], ['right_arm'])
+        
+    def play_and_record(self, motion_name, groups=['right_arm'], bag_name="no_bag_name_set"):
+        """Play the specified motion and start recording poses.
+        Try to get the joints to record from the metadata of the play_motion gesture
+        or, optionally, specify the joints to track"""
+        # Check if motion exists in param server
+        PLAYMOTIONPATH = '/play_motion/motions/'
+        if not rospy.has_param(PLAYMOTIONPATH + motion_name):
+            rospy.logerr("Motion named: " + motion_name + " does not exist in param server at " + PLAYMOTIONPATH + motion_name)
+            return
+        else:
+            rospy.loginfo("Found motion " + motion_name + " in param server at " + PLAYMOTIONPATH + motion_name)
+        # Get it's info
+        motion_info = rospy.get_param(PLAYMOTIONPATH + motion_name)
+        # check if joints was specified, if not, get the joints to actually save
+        if len(groups) > 0:
+            joints_to_record = groups
+        else:
+            joints_to_record = motion_info['groups']
+        rospy.loginfo("Got groups: " + str(joints_to_record))
+
+        # play motion
+        rospy.loginfo("Playing motion!")
+        pm_goal = PlayMotionGoal(motion_name, False, 0)
+        self.play_motion_as.send_goal(pm_goal)
+        self.lfee.start_learn(motion_name, bag_name)
+        done_with_motion = False
+        while not done_with_motion: 
+            state = self.play_motion_as.get_state()
+            #rospy.loginfo("State is: " + str(state) + " which is: " + goal_status_dict[state])
+            if state == GoalStatus.ABORTED or state == GoalStatus.SUCCEEDED:
+                done_with_motion = True
+            elif state != GoalStatus.PENDING and state != GoalStatus.ACTIVE:
+                rospy.logerr("We got state " + str(state) + " unexpectedly, motion failed. Aborting.")
+                return None
+            rospy.sleep(0.1)
+        # data is written to rosbag in here
+        motion_data = self.lfee.stop_learn()
+
+        return motion_data
+
+
 
 class recordedTrajectoryPlotter():
     def __init__(self):

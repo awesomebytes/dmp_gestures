@@ -76,7 +76,8 @@ class gestureGeneration():
         for nam, val in zip(names, values):
             print nam + " = " + str(val)
 
-    def loadGestureFromBagEndEffector(self, bagname):
+
+    def loadGestureFromBagEndEffector(self, bagname, topics=['/tf_to_ps'], groups=[], frequency_to_downsample=15): # TODO: GENERALIZEEEEE // downsample and spline!!
         """Load gesture from the bag name given """
         # get bag info
         self.info_bag = yaml.load(subprocess.Popen(['rosbag', 'info', '--yaml', bagname],
@@ -86,7 +87,7 @@ class gestureGeneration():
         
         # Create a DMP from a 3-D trajectory with orientation
         dims = 6
-        dt = 1.0
+        dt = 0.02 # 50 Hz
         K = 100
         D = 2.0 * np.sqrt(K)
         num_bases = bases_rel_to_time
@@ -95,13 +96,21 @@ class gestureGeneration():
         traj = []  
         bag = rosbag.Bag(bagname)
         first_point = True
-        for topic, msg, t in bag.read_messages(topics=['/teleop_right_hand_pose']):
+        # Also fill up downsampled traj
+        downsampled_traj = []
+        num_msgs = 0
+        num_downsampled_data_points = 0
+        for topic, msg, t in bag.read_messages(topics=topics):
+            num_msgs += 1
             p = msg # PoseStamped()
             roll, pitch, yaw = euler_from_quaternion([p.pose.orientation.x,
                                    p.pose.orientation.y,
                                    p.pose.orientation.z,
                                    p.pose.orientation.w])
             traj.append([p.pose.position.x, p.pose.position.y, p.pose.position.z, roll, pitch, yaw])
+            if num_msgs % frequency_to_downsample == 0:
+                num_downsampled_data_points += 1
+                downsampled_traj.append([p.pose.position.x, p.pose.position.y, p.pose.position.z, roll, pitch, yaw])
             if first_point:
                 # Store first point
                 self.gesture_x0 = [p.pose.position.x, p.pose.position.y, p.pose.position.z, roll, pitch, yaw]
@@ -114,11 +123,39 @@ class gestureGeneration():
         for val1, val2 in zip(self.gesture_x0, self.gesture_goal):                     
             self.gesture_difference.append(val2-val1)
         
-        print str(len(traj)) + " points in example traj."
-        resp = self.makeLFDRequest(dims, traj, dt, K, D, num_bases)
+        print str(len(traj)) + " points in example traj. Using " + str(num_bases) + " num_bases"
+        print "Downsampled traj has: " + str(len(downsampled_traj)) + " points"
+        
+        trajs_by_field = self.getTrajectoriesByJoint(downsampled_traj)
+        splined_trajs = []
+        for traj in trajs_by_field:
+            # Now we do a cubic spline between the points to filter jerkiness
+            ticks = range(0, num_downsampled_data_points)
+            cubic_spline_func = interp1d(ticks, traj, kind='cubic')
+            ticks_as_array = np.array(ticks)
+            # We will end with the same number of points than the initial trajectory
+            # TODO: Check if we can just get rid of some of them
+            new_ticks = np.linspace(ticks_as_array.min(), ticks_as_array.max(), num_msgs)
+            filtered_trajectory = cubic_spline_func(new_ticks)
+            splined_trajs.append(filtered_trajectory.tolist())
+            # Here the trajectories have the original size
+            
+        dmp_friendly_filtered_trajs = self.getTrajectoriesForDMP(splined_trajs)
+        
+        
+        resp = self.makeLFDRequest(dims, dmp_friendly_filtered_trajs, dt, K, D, num_bases)
         #Set it as the active DMP
         self.makeSetActiveRequest(resp.dmp_list)
         self.resp_from_makeLFDRequest = resp
+        
+        rospy.loginfo("Joints:" + str(groups))
+        rospy.loginfo("Initial pose:" + str(self.gesture_x0))
+        rospy.loginfo("Final pose: " + str(self.gesture_goal))
+        time = self.info_bag['duration']
+        rospy.loginfo("Time: " + str(time))
+        #rospy.loginfo("DMP result: " + str(self.resp_from_makeLFDRequest))
+        gesture_dict = self.saveGestureYAML(bagname + ".yaml", bagname, groups, self.gesture_x0, self.gesture_goal, self.resp_from_makeLFDRequest, time)
+        return gesture_dict
         
     def loadGestureFromBagJointStates(self, bagname, joints):
         """Load gesture from the bag name given """
@@ -520,29 +557,38 @@ class dmpPlanTrajectoryPlotter():
     def planToPlot(self, plan, joint_names):
         """Given a GetDMPPlanResponse make a plot of the trajectory"""
         fig, plots = plt.subplots(nrows=len(joint_names), ncols=1)
+        fig_vel, plots_vel = plt.subplots(nrows=len(joint_names), ncols=1) # Velocity plot
         # Set labels
-        for plot, joint_name in zip(plots, joint_names):
+        for plot, plot_vel, joint_name in zip(plots, plots_vel, joint_names):
             plot.set_xlabel('time')
             plot.set_ylabel('position')
             plot.set_title(joint_name)
+            plot_vel.set_xlabel('time')
+            plot_vel.set_ylabel('velocity')
+            plot_vel.set_title(joint_name)
         # Read the plan and store the arrays for each plot
         trajectories = []
+        velocities = []
         # prepare somewhere to accumulate the data
         for joint in joint_names:
             trajectories.append([])
+            velocities.append([])
         num_points = 0
         for point in plan.plan.points:
             num_points += 1
             joint_vals = point.positions
+            vel_vals = point.velocities
 #             print joint_names
 #             print joint_vals
             counter = 0
-            for joint_val in  joint_vals:
+            for joint_val, vel_val in  zip(joint_vals, vel_vals):
                 trajectories[counter].append(joint_val)
+                velocities[counter].append(vel_val)
                 counter += 1
         ticks = range(0, num_points)
-        for plot, trajectory in zip(plots, trajectories):
+        for plot, vel_plot, trajectory, velocity in zip(plots, plots_vel, trajectories, velocities):
             plot.plot(ticks, trajectory, 'b-')
+            vel_plot.plot(ticks, velocity, 'b-')
         return plt 
 
 if __name__ == '__main__':

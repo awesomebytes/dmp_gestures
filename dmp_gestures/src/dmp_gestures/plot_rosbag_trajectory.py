@@ -297,19 +297,20 @@ if __name__=='__main__':
     joints = ['arm_right_1_joint', 'arm_right_2_joint', 'arm_right_3_joint',
                             'arm_right_4_joint', 'arm_right_5_joint', 'arm_right_6_joint',
                             'arm_right_7_joint']
-    bag_name = 'crowd_salute.bag'
-#     plot = rtp.readBagAndCreatePlot(bag_name, joints)
-#     plot.show()
-    #plot.savefig('plot_' + bag_name + '.png')
+    bag_name = "crowd_salute_executed.bag.bag"  #'crowd_salute_jerky.bag'
+    plot = rtp.readBagAndCreatePlot(bag_name, joints)
+    plot.show()
+    plot.savefig('plot_' + bag_name + '_original.png')
     
 #     plot = rtp.readAndFilterBag(bag_name, joints, 20.0)
 #     print "plot looks like:"
 #     print plot
 #     plot.show()
+
     
-    plot = rtp.readAndDownSampleBag(bag_name, joints, 15)
-    plot.show()
-    
+#     plot = rtp.readAndDownSampleBag(bag_name, joints, 15)
+#     plot.show()
+#     plot.savefig('plot_' + bag_name + '_downsampled_and_splined.png')
     
 #     for cutoff in range(1, 51, 10):
 #         print float(cutoff)
